@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Temperature — DHT11</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0a0a0f;color:#eee;font-family:system-ui;
+       display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:16px}
+  h1{font-size:16px;color:#f84;margin-bottom:8px;letter-spacing:2px;font-weight:600}
+  #status{display:flex;align-items:center;gap:6px;margin-bottom:12px;font-size:12px;color:#889}
+  #dot{width:8px;height:8px;border-radius:50%;background:#fa5;transition:all .3s}
+  #dot.ok{background:#4f4;box-shadow:0 0 6px #4f4}
+  #dot.erro{background:#f44;box-shadow:0 0 6px #f44}
+  #container{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
+  #thermo{background:#000;border-radius:6px;box-shadow:0 0 20px #f842}
+  #dados{background:#111;padding:14px;border-radius:8px;min-width:180px;border:1px solid #222}
+  #t{font-size:32px;font-weight:700;color:#f84;font-family:monospace}
+  #h{font-size:18px;color:#4cf;margin:4px 0}
+  .lbl{color:#889;font-size:11px;margin:3px 0}
+  .valor{color:#eee;font-family:monospace}
+  button{background:#f84;color:#000;border:0;padding:6px 14px;border-radius:5px;
+         font-size:12px;cursor:pointer;margin-top:8px;font-weight:600}
+  button:hover{background:#fa5}
+</style>
+</head>
+<body>
+<h1>TEMPERATURE SENSOR</h1>
+<div id="status"><div id="dot"></div><span id="txt">Disconnected</span></div>
+<div id="container">
+  <canvas id="thermo" width="200" height="350"></canvas>
+  <div id="dados">
+    <div id="t">--°C</div>
+    <div id="h">--%</div>
+    <div class="lbl">Temperature: <span class="valor" id="tv">--</span>°C</div>
+    <div class="lbl">Humidity: <span class="valor" id="hv">--</span>%</div>
+    <button id="btn">Connect</button>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('thermo'), ctx = cv.getContext('2d');
+const cx = 100, base = 320, top = 30, tubeW = 30, bulbR = 40;
+let port = null, reader = null;
+
+function draw(temp, humidity) {
+  ctx.clearRect(0, 0, 200, 350);
+
+  // Thermometer outline
+  ctx.strokeStyle = '#f84'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx - tubeW/2, top);
+  ctx.lineTo(cx - tubeW/2, base - bulbR);
+  ctx.arc(cx, base - bulbR, bulbR, Math.PI, 0, true);
+  ctx.lineTo(cx + tubeW/2, top);
+  ctx.stroke();
+
+  // Mercury (temperature level)
+  const minT = 0, maxT = 50;
+  const pct = Math.max(0, Math.min(1, (temp - minT) / (maxT - minT)));
+  const mercuryH = pct * (base - bulbR - top - 10);
+  const mercuryY = base - bulbR - mercuryH;
+
+  const grad = ctx.createLinearGradient(0, base, 0, top);
+  grad.addColorStop(0, '#f00'); grad.addColorStop(0.5, '#f84'); grad.addColorStop(1, '#ff0');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(cx - tubeW/2 + 3, base - bulbR);
+  ctx.lineTo(cx - tubeW/2 + 3, mercuryY);
+  ctx.lineTo(cx + tubeW/2 - 3, mercuryY);
+  ctx.lineTo(cx + tubeW/2 - 3, base - bulbR);
+  ctx.arc(cx, base - bulbR, bulbR - 3, 0, Math.PI, true);
+  ctx.fill();
+
+  // Bulb
+  ctx.fillStyle = '#f00';
+  ctx.beginPath(); ctx.arc(cx, base - bulbR, bulbR - 3, 0, 7); ctx.fill();
+
+  // Scale ticks
+  ctx.strokeStyle = '#556'; ctx.lineWidth = 2;
+  ctx.fillStyle = '#889'; ctx.font = '11px monospace'; ctx.textAlign = 'left';
+  for (let i = 0; i <= 10; i++) {
+    const t = minT + i * 5;
+    const y = base - bulbR - (i / 10) * (base - bulbR - top - 10);
+    ctx.beginPath();
+    ctx.moveTo(cx + tubeW/2 + 5, y);
+    ctx.lineTo(cx + tubeW/2 + 12, y);
+    ctx.stroke();
+    ctx.fillText(t + '°', cx + tubeW/2 + 16, y + 4);
+  }
+
+  // Center text
+  ctx.fillStyle = '#f84'; ctx.font = 'bold 28px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(temp.toFixed(1) + '°C', cx, 20);
+}
+
+async function conectar() {
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 9600 });
+    document.getElementById('dot').className = 'ok';
+    document.getElementById('txt').textContent = 'Connected';
+    document.getElementById('btn').textContent = 'Disconnect';
+    lerDados();
+  } catch (e) {
+    document.getElementById('dot').className = 'erro';
+    document.getElementById('txt').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function lerDados() {
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (port.readable) {
+    reader = port.readable.getReader();
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value);
+        let idx;
+        while ((idx = buffer.indexOf('\n')) >= 0) {
+          const linha = buffer.slice(0, idx).trim();
+          buffer = buffer.slice(idx + 1);
+          if (linha.startsWith('{')) {
+            try {
+              const d = JSON.parse(linha);
+              draw(d.t, d.h);
+              document.getElementById('t').textContent = d.t.toFixed(1) + '°C';
+              document.getElementById('h').textContent = d.h.toFixed(1) + '%';
+              document.getElementById('tv').textContent = d.t.toFixed(1);
+              document.getElementById('hv').textContent = d.h.toFixed(1);
+            } catch(e) {}
+          }
+        }
+      }
+    } catch(e) {} finally { reader.releaseLock(); }
+  }
+}
+
+document.getElementById('btn').onclick = async () => {
+  if (port) {
+    if (reader) await reader.cancel();
+    await port.close();
+    port = null;
+    document.getElementById('dot').className = '';
+    document.getElementById('txt').textContent = 'Disconnected';
+    document.getElementById('btn').textContent = 'Connect';
+  } else {
+    conectar();
+  }
+};
+
+draw(0, 0);
+</script>
+</body>
+</html>
