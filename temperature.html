@@ -14,7 +14,7 @@
   #dot.ok{background:#4f4;box-shadow:0 0 6px #4f4}
   #dot.erro{background:#f44;box-shadow:0 0 6px #f44}
   #container{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
-  #thermo{background:#000;border-radius:6px;box-shadow:0 0 20px #f842}
+  #gauge{background:#000;border-radius:6px;box-shadow:0 0 20px #f842}
   #dados{background:#111;padding:14px;border-radius:8px;min-width:180px;border:1px solid #222}
   #t{font-size:32px;font-weight:700;color:#f84;font-family:monospace}
   #h{font-size:18px;color:#4cf;margin:4px 0}
@@ -29,7 +29,7 @@
 <h1>TEMPERATURE SENSOR</h1>
 <div id="status"><div id="dot"></div><span id="txt">Disconnected</span></div>
 <div id="container">
-  <canvas id="thermo" width="200" height="350"></canvas>
+  <canvas id="gauge" width="300" height="300"></canvas>
   <div id="dados">
     <div id="t">--°C</div>
     <div id="h">--%</div>
@@ -40,60 +40,47 @@
 </div>
 
 <script>
-const cv = document.getElementById('thermo'), ctx = cv.getContext('2d');
-const cx = 100, base = 320, top = 30, tubeW = 30, bulbR = 40;
+const cv = document.getElementById('gauge'), ctx = cv.getContext('2d');
+const cx = 150, cy = 150, r = 120;
 let port = null, reader = null;
 
 function draw(temp, humidity) {
-  ctx.clearRect(0, 0, 200, 350);
+  ctx.clearRect(0, 0, 300, 300);
 
-  // Thermometer outline
-  ctx.strokeStyle = '#f84'; ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(cx - tubeW/2, top);
-  ctx.lineTo(cx - tubeW/2, base - bulbR);
-  ctx.arc(cx, base - bulbR, bulbR, Math.PI, 0, true);
-  ctx.lineTo(cx + tubeW/2, top);
-  ctx.stroke();
+  // Background arc
+  ctx.strokeStyle = '#222'; ctx.lineWidth = 20;
+  ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI*0.75, Math.PI*2.25); ctx.stroke();
 
-  // Mercury (temperature level)
+  // Temperature arc (red-orange gradient)
   const minT = 0, maxT = 50;
   const pct = Math.max(0, Math.min(1, (temp - minT) / (maxT - minT)));
-  const mercuryH = pct * (base - bulbR - top - 10);
-  const mercuryY = base - bulbR - mercuryH;
-
-  const grad = ctx.createLinearGradient(0, base, 0, top);
+  const endAngle = Math.PI*0.75 + pct * Math.PI*1.5;
+  const grad = ctx.createLinearGradient(0, 0, 300, 300);
   grad.addColorStop(0, '#f00'); grad.addColorStop(0.5, '#f84'); grad.addColorStop(1, '#ff0');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.moveTo(cx - tubeW/2 + 3, base - bulbR);
-  ctx.lineTo(cx - tubeW/2 + 3, mercuryY);
-  ctx.lineTo(cx + tubeW/2 - 3, mercuryY);
-  ctx.lineTo(cx + tubeW/2 - 3, base - bulbR);
-  ctx.arc(cx, base - bulbR, bulbR - 3, 0, Math.PI, true);
-  ctx.fill();
+  ctx.strokeStyle = grad; ctx.lineWidth = 20; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI*0.75, endAngle); ctx.stroke();
 
-  // Bulb
-  ctx.fillStyle = '#f00';
-  ctx.beginPath(); ctx.arc(cx, base - bulbR, bulbR - 3, 0, 7); ctx.fill();
-
-  // Scale ticks
+  // Ticks
   ctx.strokeStyle = '#556'; ctx.lineWidth = 2;
-  ctx.fillStyle = '#889'; ctx.font = '11px monospace'; ctx.textAlign = 'left';
   for (let i = 0; i <= 10; i++) {
-    const t = minT + i * 5;
-    const y = base - bulbR - (i / 10) * (base - bulbR - top - 10);
+    const a = Math.PI*0.75 + i * Math.PI*0.15;
+    const l = i % 5 === 0 ? 15 : 8;
     ctx.beginPath();
-    ctx.moveTo(cx + tubeW/2 + 5, y);
-    ctx.lineTo(cx + tubeW/2 + 12, y);
+    ctx.moveTo(cx + Math.cos(a)*(r-30), cy + Math.sin(a)*(r-30));
+    ctx.lineTo(cx + Math.cos(a)*(r-30+l), cy + Math.sin(a)*(r-30+l));
     ctx.stroke();
-    ctx.fillText(t + '°', cx + tubeW/2 + 16, y + 4);
   }
 
   // Center text
-  ctx.fillStyle = '#f84'; ctx.font = 'bold 28px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText(temp.toFixed(1) + '°C', cx, 20);
+  ctx.fillStyle = '#f84'; ctx.font = 'bold 48px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(temp.toFixed(1) + '°', cx, cy - 10);
+  ctx.fillStyle = '#4cf'; ctx.font = '20px monospace';
+  ctx.fillText(humidity.toFixed(1) + '%', cx, cy + 35);
+
+  // Labels
+  ctx.fillStyle = '#889'; ctx.font = '12px system-ui';
+  ctx.fillText('TEMPERATURE', cx, cy + 70);
 }
 
 async function conectar() {
